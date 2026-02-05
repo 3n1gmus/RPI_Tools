@@ -1,11 +1,20 @@
 #!/bin/bash
 
-# 1. Update and install dependencies
-echo "Updating system and installing Chromium..."
-apt update && apt upgrade -y
-apt install -y chromium-browser x11-xserver-utils sed
+# 1. Update and install core dependencies
+echo "Updating system..."
+sudo apt update && sudo apt install -y chromium-browser x11-xserver-utils wget libfuse2
 
-# 2. Create the HTML Dashboard
+# 2. Download and Setup Keet (Portable Binary)
+echo "Downloading Keet..."
+mkdir -p ~/Apps
+# Note: This URL points to the latest Linux ARM64 version
+wget -O ~/Apps/keet-linux.tar.gz https://keet.io/downloads/latest/linux-arm64
+cd ~/Apps && tar -xvf keet-linux.tar.gz
+chmod +x ~/Apps/Keet
+# Create a symlink for easy calling
+sudo ln -sf ~/Apps/Keet /usr/local/bin/keet
+
+# 3. Create the HTML Dashboard with Keet Integration
 echo "Creating the Kiosk Dashboard..."
 cat <<EOF > /home/$USER/kiosk_home.html
 <!DOCTYPE html>
@@ -14,64 +23,42 @@ cat <<EOF > /home/$USER/kiosk_home.html
     <meta charset="UTF-8">
     <title>Meeting Kiosk</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f0f0f; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; overflow: hidden; }
-        h1 { margin-bottom: 40px; color: #00ff88; font-weight: 300; letter-spacing: 2px; }
-        .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 25px; }
-        .btn { width: 220px; padding: 35px; text-align: center; border-radius: 12px; text-decoration: none; color: white; font-weight: bold; font-size: 1.4rem; transition: all 0.2s ease; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
-        .btn:hover { transform: translateY(-5px); filter: brightness(1.2); box-shadow: 0 8px 25px rgba(0,0,0,0.5); }
+        body { font-family: sans-serif; background: #0b0b0b; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+        .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+        .btn { width: 180px; padding: 30px; text-align: center; border-radius: 12px; text-decoration: none; color: white; font-weight: bold; border: 1px solid rgba(255,255,255,0.1); }
         .zoom { background: #2D8CFF; }
         .meet { background: #00832D; }
-        .teams { background: #4B53BC; }
+        .keet { background: #ffffff; color: black; border: 2px solid #00ff88; }
         .jitsi { background: #ff4000; }
-        .url-box { margin-top: 40px; display: flex; gap: 10px; }
-        input { padding: 15px; border-radius: 8px; border: none; width: 300px; font-size: 1rem; }
-        .go-btn { padding: 15px 25px; background: #00ff88; color: black; border-radius: 8px; font-weight: bold; cursor: pointer; border: none; }
+        .clock { margin-top: 30px; font-size: 1.5rem; color: #555; }
     </style>
 </head>
 <body>
-    <h1>CONFERENCE HUB</h1>
+    <h1 style="color: #00ff88;">COMMUNICATION HUB</h1>
     <div class="grid">
         <a href="https://zoom.us/join" class="btn zoom">Zoom</a>
         <a href="https://meet.google.com" class="btn meet">Google Meet</a>
-        <a href="https://teams.microsoft.com/_#/scheduling-grid" class="btn teams">MS Teams</a>
         <a href="https://meet.jit.si/" class="btn jitsi">Jitsi Meet</a>
     </div>
-    <div class="url-box">
-        <input type="text" id="meetingUrl" placeholder="Paste Meeting Link Here...">
-        <button class="go-btn" onclick="window.location.href=document.getElementById('meetingUrl').value">JOIN</button>
+    <div style="margin-top:20px;">
+        <button onclick="window.close();" class="btn keet">Launch Keet P2P</button>
     </div>
+    <div class="clock" id="time"></div>
+    <script>
+        setInterval(() => { document.getElementById('time').innerText = new Date().toLocaleTimeString(); }, 1000);
+    </script>
 </body>
 </html>
 EOF
 
-chown $USER:$USER /home/$USER/kiosk_home.html
-
-# 3. Configure Autostart (Global LXDE-pi)
-echo "Configuring Autostart and disabling screen sleep..."
+# 4. Finalizing Autostart
+echo "Configuring Autostart..."
 mkdir -p /home/$USER/.config/lxsession/LXDE-pi/
-AUTOSTART_FILE="/home/$USER/.config/lxsession/LXDE-pi/autostart"
-
-cat <<EOF > $AUTOSTART_FILE
+cat <<EOF > /home/$USER/.config/lxsession/LXDE-pi/autostart
 @xset s off
 @xset -dpms
 @xset s noblank
-@chromium-browser --kiosk --noerrdialogs --disable-infobars --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" /home/$USER/kiosk_home.html
+@chromium-browser --kiosk --noerrdialogs --disable-infobars /home/$USER/kiosk_home.html
 EOF
 
-chown $USER:$USER $AUTOSTART_FILE
-
-# 4. Adjust GPU Memory (requires reboot)
-echo "Increasing GPU Memory to 256MB..."
-if grep -q "gpu_mem" /boot/config.txt; then
-    sed -i 's/gpu_mem=.*/gpu_mem=256/' /boot/config.txt
-else
-    echo "gpu_mem=256" >> /boot/config.txt
-fi
-
-echo "-------------------------------------------------------"
-echo "Setup Complete! Your Pi will boot into the Kiosk after reboot."
-echo "Note: If using Pi 5, ensure your cooling fan is connected."
-echo "REBOOTING IN 10 SECONDS... Press Ctrl+C to cancel."
-echo "-------------------------------------------------------"
-sleep 10
-reboot
+echo "Done! Run 'keet' in the terminal to test, or reboot to see the kiosk."
