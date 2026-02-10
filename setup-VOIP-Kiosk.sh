@@ -8,7 +8,7 @@ sudo apt update && sudo apt install -y chromium-browser x11-xserver-utils wget l
 echo "Downloading Keet..."
 mkdir -p ~/Apps
 # Note: This URL points to the latest Linux ARM64 version
-wget -O ~/Apps/keet-linux.tar.gz https://keet.io/downloads/latest/linux-arm64
+wget -O ~/Apps/keet-linux.tar.gz https://static.keet.io/downloads/latest/Keet-arm64.tar.gz
 cd ~/Apps && tar -xvf keet-linux.tar.gz
 chmod +x ~/Apps/Keet
 # Create a symlink for easy calling
