@@ -39,7 +39,6 @@ if [ -f "$UPGRADE_CONF" ]; then
     sed -i '/Unattended-Upgrade::Automatic-Reboot-Time/d' "$UPGRADE_CONF"
     
     # Append kiosk-optimized reboot parameters before the final closing brace block
-    # This places them safely at the end of the config file
     cat << 'EOF' >> "$UPGRADE_CONF"
 
 // Kiosk Specific Automation Added via Setup Script
@@ -59,12 +58,26 @@ echo "--> Optimizing GPU Memory to 128MB in $CONFIG_FILE..."
 sed -i '/^gpu_mem=/d' "$CONFIG_FILE"
 echo "gpu_mem=128" >> "$CONFIG_FILE"
 
-# 5. Force CPU to Performance Mode permanently
-echo "--> Setting CPU governor to performance at boot..."
-sed -i '/^exit 0/d' /etc/rc.local
-echo 'echo "performance" | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor' >> /etc/rc.local
-echo "exit 0" >> /etc/rc.local
-chmod +x /etc/rc.local
+# 5. Force CPU to Performance Mode via native systemd
+echo "--> Creating systemd service for CPU performance governor..."
+cat << 'EOF' > /etc/systemd/system/cpu-performance.service
+[Unit]
+Description=Force CPU Scaling Governor to Performance Mode
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'echo "performance" | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor'
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Reload and engage the new service
+systemctl daemon-reload
+systemctl enable cpu-performance.service
+systemctl start cpu-performance.service
 
 # 6. Configure Labwc Environment Autostart (Run as the normal user)
 REAL_USER=${SUDO_USER:-$USER}
@@ -88,6 +101,7 @@ cat << 'EOF' > "$AUTOSTART_FILE"
 unclutter -idle 3 -root &
 
 # 2. Launch Chromium in dedicated Kiosk Mode
+# Change the URL below to your dashboard, Jitsi instance, or Google Meet URL
 chromium-browser \
   --kiosk \
   --noerrdialogs \
