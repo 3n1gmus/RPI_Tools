@@ -25,20 +25,16 @@ apt install unattended-upgrades apt-listchanges -y
 
 # 3. Configure Automatic Updates (Unattended-Upgrades)
 echo "--> Configuring unattended-upgrades..."
-# Force enable the automatic upgrades system cleanly via configuration seeds
 echo "unattended-upgrades unattended-upgrades/enable_auto_updates boolean true" | debconf-set-selections
 dpkg-reconfigure -f noninteractive unattended-upgrades
 
 UPGRADE_CONF="/etc/apt/apt.conf.d/50unattended-upgrades"
 if [ -f "$UPGRADE_CONF" ]; then
     echo "--> Configuring 3:00 AM maintenance window for updates requiring reboots..."
-    
-    # Clean up any existing matching entries to avoid duplicates
     sed -i '/Unattended-Upgrade::Automatic-Reboot /d' "$UPGRADE_CONF"
     sed -i '/Unattended-Upgrade::Automatic-Reboot-WithUsers/d' "$UPGRADE_CONF"
     sed -i '/Unattended-Upgrade::Automatic-Reboot-Time/d' "$UPGRADE_CONF"
     
-    # Append kiosk-optimized reboot parameters before the final closing brace block
     cat << 'EOF' >> "$UPGRADE_CONF"
 
 // Kiosk Specific Automation Added via Setup Script
@@ -74,51 +70,63 @@ RemainAfterExit=yes
 WantedBy=multi-user.target
 EOF
 
-# Reload and engage the new service
 systemctl daemon-reload
 systemctl enable cpu-performance.service
 systemctl start cpu-performance.service
 
-# 6. Configure Labwc Environment Autostart (Run as the normal user)
+# 6. Configure Kanshi Display Profile (Forced Mirroring + 1680x1050 Upper Cap)
 REAL_USER=${SUDO_USER:-$USER}
 USER_HOME=$(eval echo ~$REAL_USER)
-AUTOSTART_DIR="$USER_HOME/.config/labwc"
-AUTOSTART_FILE="$AUTOSTART_DIR/autostart"
 
-echo "--> Configuring Labwc kiosk autostart for user: $REAL_USER..."
-mkdir -p "$AUTOSTART_DIR"
+echo "--> Setting up Kanshi display profile for mirroring and resolution constraints..."
+mkdir -p "$USER_HOME/.config/kanshi"
 
-if [ -f "$AUTOSTART_FILE" ]; then
-    mv "$AUTOSTART_FILE" "${AUTOSTART_FILE}.bak"
-fi
-
-cat << 'EOF' > "$AUTOSTART_FILE"
-# ==========================================
-# Kiosk Autostart Profile
-# ==========================================
-
-# 1. Hide mouse cursor after 3 seconds of inactivity
-unclutter -idle 3 -root &
-
-# 2. Launch Chromium in dedicated Kiosk Mode
-# Change the URL below to your dashboard, Jitsi instance, or Google Meet URL
-chromium-browser \
-  --kiosk \
-  --noerrdialogs \
-  --disable-infobars \
-  --no-first-run \
-  --start-maximized \
-  --autoplay-policy=no-user-gesture-required \
-  --use-fake-ui-for-media-stream \
-  https://meet.google.com &
+cat << 'EOF' > "$USER_HOME/.config/kanshi/config"
+profile {
+    output HDMI-A-1 mode <= 1680x1050 position 0,0
+    output HDMI-A-2 mode <= 1680x1050 position 0,0
+}
 EOF
 
+# Set local folder permissions for the real user
 chown -R "$REAL_USER":"$REAL_USER" "$USER_HOME/.config"
+
+# Create global system default folder so ANY future users inherit this rule
+echo "--> Copying Kanshi configuration to system defaults (/etc/xdg/kanshi/config)..."
+mkdir -p /etc/xdg/kanshi
+cp "$USER_HOME/.config/kanshi/config" /etc/xdg/kanshi/config
+
+# 7. Configure Desktop XDG Autostart (.config/autostart)
+AUTOSTART_DIR="$USER_HOME/.config/autostart"
+echo "--> Configuring Desktop XDG autostart for user: $REAL_USER..."
+mkdir -p "$AUTOSTART_DIR"
+
+# A. Create the Chromium Kiosk launcher
+cat << 'EOF' > "$AUTOSTART_DIR/kiosk.desktop"
+[Desktop Entry]
+Type=Application
+Name=Chromium Kiosk
+Comment=Launch Chromium in Video Kiosk Mode on startup
+Exec=chromium --kiosk --noerrdialogs --disable-infobars --no-first-run --start-maximized --autoplay-policy=no-user-gesture-required --use-fake-ui-for-media-stream https://meet.google.com
+EOF
+
+# B. Create the Unclutter mouse-hiding launcher
+cat << 'EOF' > "$AUTOSTART_DIR/hide-mouse.desktop"
+[Desktop Entry]
+Type=Application
+Name=Hide Mouse Cursor
+Comment=Hide the mouse pointer automatically during kiosk execution
+Exec=unclutter -idle 3 -root
+Terminal=false
+X-GNOME-Autostart-enabled=true
+EOF
+
+# Ensure the real user owns the autostart shortcuts completely
+chown -R "$REAL_USER":"$REAL_USER" "$AUTOSTART_DIR"
 
 echo "================================================="
 echo " Setup Complete! "
-echo " Your Pi will automatically apply security updates "
-echo " and restart at 3:00 AM only if a reboot is needed."
+echo " Kiosk initialization has shifted to XDG Autostart."
 echo "================================================="
 echo "Rebooting in 5 seconds... Press Ctrl+C to abort."
 sleep 5
