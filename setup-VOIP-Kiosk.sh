@@ -96,21 +96,46 @@ echo "--> Copying Kanshi configuration to system defaults (/etc/xdg/kanshi/confi
 mkdir -p /etc/xdg/kanshi
 cp "$USER_HOME/.config/kanshi/config" /etc/xdg/kanshi/config
 
-# 7. Configure Desktop XDG Autostart (.config/autostart)
+# 7. Configure Desktop XDG Autostart & Wrapper Script
 AUTOSTART_DIR="$USER_HOME/.config/autostart"
 echo "--> Configuring Desktop XDG autostart for user: $REAL_USER..."
 mkdir -p "$AUTOSTART_DIR"
 
-# A. Create the Chromium Kiosk launcher
+# A. Create the background launcher helper script to wipe crash markers safely
+echo "--> Generating background kiosk browser launcher script..."
+cat << 'EOF' > /usr/local/bin/kiosk-browser.sh
+#!/bin/bash
+PREFS_FILE="$HOME/.config/chromium/Default/Preferences"
+LOCAL_STATE="$HOME/.config/chromium/Local State"
+
+if [ -f "$PREFS_FILE" ]; then
+    sed -i 's/"exit_type":"Crashed"/"exit_type":"Normal"/g' "$PREFS_FILE"
+    sed -i 's/"exited_cleanly":false/"exited_cleanly":true/g' "$PREFS_FILE"
+fi
+
+if [ -f "$LOCAL_STATE" ]; then
+    sed -i 's/"exit_type":"Crashed"/"exit_type":"Normal"/g' "$LOCAL_STATE"
+    sed -i 's/"exited_cleanly":false/"exited_cleanly":true/g' "$LOCAL_STATE"
+fi
+
+sleep 3
+/usr/bin/chromium --start-maximized --password-store=basic --autoplay-policy=no-user-gesture-required --use-fake-ui-for-media-stream
+EOF
+
+chmod +x /usr/local/bin/kiosk-browser.sh
+
+# B. Create a clean, standard-compliant Chromium launcher shortcut pointing to our script
 cat << 'EOF' > "$AUTOSTART_DIR/kiosk.desktop"
 [Desktop Entry]
 Type=Application
 Name=Chromium Kiosk
-Comment=Launch Chromium in Video Kiosk Mode on startup
-Exec=chromium --kiosk --noerrdialogs --disable-infobars --no-first-run --start-maximized --autoplay-policy=no-user-gesture-required --use-fake-ui-for-media-stream https://meet.google.com
+Comment=Launch Chromium cleanly on startup via wrapper script
+Exec=/usr/local/bin/kiosk-browser.sh
+Terminal=false
+X-GNOME-Autostart-enabled=true
 EOF
 
-# B. Create the Unclutter mouse-hiding launcher
+# C. Create the Unclutter mouse-hiding launcher
 cat << 'EOF' > "$AUTOSTART_DIR/hide-mouse.desktop"
 [Desktop Entry]
 Type=Application
